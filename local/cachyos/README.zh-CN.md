@@ -7,12 +7,12 @@
 1. 系统DKMS hooks自动为有headers的内核编译gpu-unlock-4060-local/1.1.1.ad107.1；目标Clang内核用LLVM，GCC内核清空LLVM。
 2. 本地99-gpu-unlock-4060.hook在当前70-DKMS及90-dracut之后，执行root-owned `/usr/local/lib/gpu-unlock-4060/update-images.sh`。
 3. 更新器枚举所有具备pkgbase/vmlinuz的已安装linux系列内核，要求headers、DKMS installed、vermagic和本地结果接口匹配，构建审计独立镜像。
-4. 输出 `/boot/initramfs-<pkgbase>-unlock.img`。先构建临时文件、审计、同文件系统暂存校验，再原子替换同名unlock文件。
+4. 输出 `/boot/initramfs-<pkgbase>-nvidia-40-unlock.img`。先构建临时文件、审计、同文件系统暂存校验，再原子替换同名unlock文件。
 5. **绝不生成/改写GRUB菜单，不复制专用内核，不改默认项，不改普通或fallback镜像。** 用户配置最后一步。
 
 本机对应：
-- linux 7.2.11-arch1-1 → /boot/initramfs-linux-unlock.img
-- linux-cachyos 7.3.0-4-cachyos → /boot/initramfs-linux-cachyos-unlock.img
+- linux 7.2.11-arch1-1 → /boot/initramfs-linux-nvidia-40-unlock.img
+- linux-cachyos 7.3.0-4-cachyos → /boot/initramfs-linux-cachyos-nvidia-40-unlock.img
 
 相同pkgbase同时出现多个版本时拒绝，避免固定文件名歧义。无headers/模块编译失败时保留旧unlock并报错；旧镜像可能不匹配升级后的内核，不能因为文件存在就继续启动。
 
@@ -40,10 +40,10 @@ sudo /usr/local/lib/gpu-unlock-4060/update-images.sh
 
 ```text
 linux  /boot/vmlinuz-linux-cachyos 原有参数 gpu_unlock.targets=0000:01:00.0 gpu_unlock.ad107_experimental=1
-initrd /boot/initramfs-linux-cachyos-unlock.img
+initrd /boot/initramfs-linux-cachyos-nvidia-40-unlock.img
 ```
 
-普通Arch对应vmlinuz-linux + initramfs-linux-unlock.img。这些是结构示例，不要把“原有参数”原样粘贴。GRUB文件路径取决于/boot布局。当前本机/boot在ext4根分区。用户可用/boot/grub/custom.cfg或40_custom，自行管理。不运行grub-mkconfig也不改任何默认项的责任由更新器保持。
+普通Arch对应vmlinuz-linux + initramfs-linux-nvidia-40-unlock.img。这些是结构示例，不要把“原有参数”原样粘贴。GRUB文件路径取决于/boot布局。当前本机/boot在ext4根分区。用户可用/boot/grub/custom.cfg或40_custom，自行管理。不运行grub-mkconfig也不改任何默认项的责任由更新器保持。
 
 ## 自动更新边界
 

@@ -7,7 +7,7 @@ class ImageOnlyUpdater(unittest.TestCase):
    self.assertEqual(subprocess.run(['bash','-n',str(BASE/name)],capture_output=True).returncode,0)
  def test_no_menu_or_stock_writes(self):
   s=(BASE/'update-images.sh').read_text()
-  self.assertIn('out="/boot/initramfs-$pkg-unlock.img"',s)
+  self.assertIn('out="/boot/initramfs-$pkg-nvidia-40-unlock.img"',s)
   self.assertNotIn('menuentry',s)
   self.assertNotIn('grub-script-check',s)
   self.assertNotIn('KERNEL_PKGBASE',s)

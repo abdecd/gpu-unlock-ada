@@ -37,7 +37,7 @@ build_one() (
  [[ $mod == */updates/dkms/gpu_unlock.ko* ]] || exit 1
  [[ $(modinfo -k "$k" -F vermagic gpu_unlock) == "$k "* ]] || exit 1
  modinfo -k "$k" -p gpu_unlock | grep -q '^ad107_result:' || exit 1
- out="/boot/initramfs-$pkg-unlock.img"
+ out="/boot/initramfs-$pkg-nvidia-40-unlock.img"
  [[ ! -L $out && ( ! -e $out || -f $out ) ]] || { echo 'Unsafe output path' >&2; exit 1; }
  WORK=$(mktemp -d /var/tmp/gpu-unlock-dkms.XXXXXX)
  STAGED=''
@@ -63,13 +63,13 @@ build_one() (
   --assets /usr/lib/firmware/gpu-unlock/610.43.03 --overlay "$LIB/image-overlay" > "$LOG/audit-$k.json"
  [[ ! -s $WORK/stock.sha256 ]] || sha256sum -c "$WORK/stock.sha256"
  # Copy on /boot's filesystem and rename only after image audit passes.
- STAGED=$(mktemp "/boot/.initramfs-$pkg-unlock.XXXXXX")
+ STAGED=$(mktemp "/boot/.initramfs-$pkg-nvidia-40-unlock.XXXXXX")
  install -m600 "$WORK/initramfs.img" "$STAGED"
  cmp "$WORK/initramfs.img" "$STAGED"
  sync -f "$STAGED"
  mv -f -- "$STAGED" "$out";STAGED=''
- sha256sum "$out" > "$LOG/$pkg-unlock.sha256"
- printf '%s\n' "$k" > "$LOG/$pkg-unlock.kernel"
+ sha256sum "$out" > "$LOG/$pkg-nvidia-40-unlock.sha256"
+ printf '%s\n' "$k" > "$LOG/$pkg-nvidia-40-unlock.kernel"
  echo "Published $out (kernel $k); ordinary/fallback images unchanged."
 )
 # Do not call a build function as an if condition: it disables errexit inside it.
