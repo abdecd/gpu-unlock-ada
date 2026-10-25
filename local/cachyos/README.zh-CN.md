@@ -48,3 +48,29 @@ sudo bash local/cachyos/uninstall-host.sh
 DKMS已为7.2.11-arch1-1(GCC)及7.3.0-4-cachyos(LLVM)实际编译、MOK签名并安装。完整资源回归31项、3项可选依赖跳过；编译器选择模拟3项通过。原始及TEST镜像哈希未变；当前已加载模块仍来自之前验证过的TEST，不宣称新DKMS产物已启动验证。
 
 这次安装仅为DKMS注册，不是pacman包，因此pacman不跟踪这些手动安装文件；本分支脚本负责卸载。后续系统内核包更新会由现有DKMS hooks找到/usr/src的注册模块。镜像/GRUB仍需显式维护，未设置自动重启/自动切默认项。
+
+## 独立镜像自动更新（本分支后续实现）
+
+前文“不自动更新镜像/GRUB”描述基础DKMS安装阶段。额外执行 `install-auto-update.sh` 后，以下新流程取代手动维护：
+
+- root专用运行文件安装在 `/usr/local/lib/gpu-unlock-4060/`，不依赖外接磁盘或Git工作区。
+- 本机rootUUID/启动参数留在 `/etc/gpu-unlock-4060.conf`，不提交。
+- `/etc/pacman.d/hooks/99-gpu-unlock-4060.hook` 在当前70-DKMS及90-dracut之后运行；默认仅处理linux-cachyos包内核。
+- 每次核对DKMS installed状态、目标vermagic和结果接口，从已安装签名压缩模块取规范化字节作校验；固定固件核对9个SHA。
+- 构建版本化独立镜像与内核副本，排除抢先绑定驱动、保留门控；镜像审计通过才原子更新独立菜单 `/boot/grub/gpu-unlock-4060.cfg`。
+- 已有custom.cfg只新增受标记的source块，TEST原文保留；不改grub.cfg/default/grub或默认选择，不调用reboot/modprobe。
+- 当前布局仅支持ext4根分区同时包含/boot。新菜单检查对应内核pkgbase仍存在，避免显示已移除内核；这不等于保证其NVIDIA驱动一定成功。
+- 钩子失败不能回滚pacman更新，会保留之前菜单/已生成文件；此前内核被移除时旧项不一定可用。请检查更新输出和 `/var/log/gpu-unlock-4060/`，不能忽略构建失败。
+- 更新器不会自动清理历史镜像，防止误删恢复文件；定期检查/boot空间。
+
+管理员安装自动化：
+
+```bash
+sudo bash local/cachyos/install-auto-update.sh
+```
+
+手动DKMS升级/改变root配置不触发pacman hook，之后需明确运行 `/usr/local/lib/gpu-unlock-4060/update-images.sh`。此命令只构建发布，不启动。Git pull不会自动更新root-owned已安装工具，需审查后显式升级工具副本。
+
+自动化可停止：删除本地99-gpu-unlock-4060.hook后不再自动构建（不影响已存在入口）；卸载DKMS之前应同时停止此钩子并移除managed source块。仍保留原始正常入口。休眠/runtime-D3边界不变。
+
+本机已手动执行更新器成功：新DKMS菜单已发布、图像审计通过；未实际模拟pacman内核升级，未启动新DKMS入口。旧TEST及默认保持。后续仍需一次新入口启动验证。

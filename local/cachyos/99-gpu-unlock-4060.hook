@@ -1,0 +1,36 @@
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Path
+Target = usr/lib/modules/*/vmlinuz
+Target = usr/lib/modules/*/build/include/
+Target = usr/lib/modules/*/modules.order
+Target = usr/src/*/dkms.conf
+Target = usr/lib/dracut/*
+Target = usr/lib/firmware/*
+
+[Trigger]
+Operation = Remove
+Type = Path
+Target = usr/lib/modules/*/vmlinuz
+Target = usr/lib/modules/*/pkgbase
+
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Type = Package
+Target = systemd
+Target = dracut
+Target = kmod
+Target = dkms
+Target = intel-ucode
+Target = amd-ucode
+
+[Action]
+Description = Building audited RTX 4060 DKMS unlock images (stock boot unchanged)...
+When = PostTransaction
+Depends = dkms
+Depends = dracut
+Depends = python
+Depends = kmod
+Exec = /usr/local/lib/gpu-unlock-4060/update-images.sh
