@@ -1,0 +1,16 @@
+[Unit]
+Description=Single-attempt AD107 initrd unlock gate
+DefaultDependencies=no
+Before=dracut-pre-udev.service initrd-switch-root.service initrd-switch-root.target
+OnFailure=emergency.target
+OnFailureJobMode=isolate
+
+[Service]
+Type=oneshot
+ExecStart=/usr/libexec/ad107-unlock-gate
+RemainAfterExit=yes
+Restart=no
+TimeoutStartSec=infinity
+TimeoutStopSec=infinity
+StandardOutput=journal+console
+StandardError=journal+console

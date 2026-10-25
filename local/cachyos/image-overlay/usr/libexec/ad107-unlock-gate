@@ -1,0 +1,95 @@
+#!/bin/sh
+# Initrd-only, single attempt. No sourcing, test-root override, or retry interface.
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+IFS=' 	
+'
+unset MODPROBE_OPTIONS
+umask 077
+set -f
+
+record_dir=/run/ad107-experiment
+pci=/sys/bus/pci/devices/0000:01:00.0
+params=/sys/module/gpu_unlock/parameters
+
+# Atomic per-boot exclusion; retain it on every exit, including failure.
+mkdir -p "$record_dir" || exit 1
+if ! mkdir "$record_dir/attempted"; then
+    printf '%s\n' 'AD107 gate: prior invocation; refusing retry (preserving diagnostics).' >&2
+    exit 1
+fi
+
+record() {
+    printf '%s\n' "$1" > "$record_dir/result" || return 1
+    printf 'AD107 gate: %s\n' "$1" >&2
+}
+fail() {
+    record "FAILED: $1" || :
+    exit 1
+}
+# Only complete, single-line sysfs/proc values are accepted.
+read_single() {
+    value=
+    extra=
+    {
+        IFS= read -r value || return 1
+        if IFS= read -r extra || [ -n "$extra" ]; then
+            return 1
+        fi
+    } < "$1"
+}
+
+record 'VALIDATING: diagnostic only; not an authorization token' || exit 1
+read_single /proc/cmdline || fail 'cannot read single-line kernel command line'
+cmdline=$value
+target_count=0
+optin_count=0
+# Deliberate whitespace splitting, with globbing disabled. Quoted/escaped forms
+# are not alternate authorizations: only the literal tokens below are allowed.
+for arg in $cmdline; do
+    case "$arg" in
+        gpu_unlock.targets=0000:01:00.0) target_count=$((target_count + 1)) ;;
+        gpu_unlock.ad107_experimental=1) optin_count=$((optin_count + 1)) ;;
+        pci-stub.*|pci_stub.*) fail 'builtin pci-stub configuration forbidden' ;;
+        gpu_unlock.*|gpu-unlock.*) fail 'unknown, conflicting or malformed gpu_unlock argument' ;;
+    esac
+done
+[ "$target_count" -eq 1 ] || fail 'require exact target flag once'
+[ "$optin_count" -eq 1 ] || fail 'require exact experimental flag once'
+
+[ ! -d /sys/module/gpu_unlock ] || fail 'gpu_unlock already loaded'
+# Defense in depth; builder must physically omit all these binder modules.
+# Globbing is enabled only for this fixed sysfs inventory, never cmdline data.
+set +f
+for module in /sys/module/nvidia* /sys/module/nouveau /sys/module/vfio_pci /sys/module/vfio_pci_core; do
+    [ ! -d "$module" ] || fail 'competing GPU binder already loaded'
+done
+set -f
+[ -d "$pci" ] || fail 'target PCI function absent'
+read_single "$pci/vendor" || fail 'cannot read PCI vendor'
+[ "$value" = 0x10de ] || fail 'unexpected PCI vendor'
+read_single "$pci/device" || fail 'cannot read PCI device'
+[ "$value" = 0x28a0 ] || fail 'unexpected PCI device (requires AD107M 10de:28a0)'
+[ ! -L "$pci/driver" ] && [ ! -e "$pci/driver" ] || fail 'PCI function already bound'
+read_single "$pci/driver_override" || fail 'cannot read driver_override'
+case "$value" in
+    ''|'(null)') ;;
+    *) fail 'PCI driver_override must be unset' ;;
+esac
+command -v modprobe >/dev/null 2>&1 || fail 'modprobe unavailable'
+record 'ATTEMPTING: synchronous kernel module init; may hang indefinitely' || exit 1
+# No shell hooks/config injection, background worker, timeout, unload or retry.
+# This is the sole module-loading command. Init completion alone is insufficient.
+modprobe -C /dev/null --ignore-install gpu_unlock targets=0000:01:00.0 ad107_experimental=1
+rc=$?
+[ "$rc" -eq 0 ] || fail "modprobe returned $rc"
+read_single "$params/targets" || fail 'missing/malformed targets parameter'
+[ "$value" = 0000:01:00.0 ] || fail 'targets parameter mismatch'
+read_single "$params/ad107_experimental" || fail 'missing/malformed experimental parameter'
+# Linux bool module parameters read back Y, not the input spelling 1.
+[ "$value" = Y ] || fail 'experimental parameter mismatch (requires Y)'
+read_single "$params/ad107_result" || fail 'missing/malformed AD107 outcome'
+[ "$value" = 3 ] || fail "AD107 outcome not success: $value"
+[ ! -L "$pci/driver" ] && [ ! -e "$pci/driver" ] || fail 'PCI function became bound during gate'
+record 'SUCCESS: targets=0000:01:00.0 ad107_experimental=Y ad107_result=3; diagnostic only' || exit 1
+exit 0

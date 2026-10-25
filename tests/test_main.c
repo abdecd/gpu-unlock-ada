@@ -15,7 +15,7 @@
 #define RTX_3090 0x2204
 #define RTX_3070 0x2484
 #define RTX_A2000 0x2531 /* GA106 professional: not supported */
-#define RTX_4090 0x2684 /* AD102 */
+#define RTX_4090 0x2684	 /* AD102 */
 #define RTX_4070TI_SUPER GU_AD103_RTX_4070_TI_SUPER
 #define RTX_4060TI_16GB GU_AD106_RTX_4060_TI_16GB
 
@@ -27,6 +27,7 @@ static pthread_mutex_t fake_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t fake_cond = PTHREAD_COND_INITIALIZER;
 static struct {
 	int loads, releases, fail_load;
+	int expected_result, bind_before_worker;
 	struct pci_dev *load_dev;
 	int started, finished, in_flight, max_in_flight;
 	int expected_concurrent; /* unlocks that must overlap */
@@ -97,6 +98,10 @@ static void *async_thread(void *arg)
 {
 	struct async_entry *entry = arg;
 
+	if (fake.bind_before_worker) {
+		struct pci_dev *pdev = entry->data;
+		pdev->driver = &gsp_marker;
+	}
 	entry->fn(entry->data, entry->cookie);
 	free(entry);
 	return NULL;
@@ -108,10 +113,12 @@ async_cookie_t async_schedule_domain(async_func_t fn, void *data, struct async_d
 	async_cookie_t cookie;
 
 	assert(entry);
+	if (((struct pci_dev *)data)->device == GU_AD107_RTX_4060_LAPTOP)
+		assert(ad107_result == AD107_PENDING);
 	pthread_mutex_lock(&domain->lock);
 	assert(domain->count < sizeof(domain->threads) / sizeof(domain->threads[0]));
 	cookie = domain->count + 1;
-	*entry = (struct async_entry){ fn, data, cookie };
+	*entry = (struct async_entry){fn, data, cookie};
 	assert(!pthread_create(&domain->threads[domain->count++], NULL, async_thread, entry));
 	pthread_mutex_unlock(&domain->lock);
 	return cookie;
@@ -131,6 +138,7 @@ int gpu_unlock_610_load_shared(struct pci_dev *pdev, struct gpu_unlock_610_share
 	pthread_mutex_lock(&fake_lock);
 	/* Loaded once, before any unlock can use it. */
 	assert(!fake.started && !shared->gsp);
+	assert(ad107_result == (pdev->device == GU_AD107_RTX_4060_LAPTOP ? AD107_PENDING : AD107_IDLE));
 	fake.loads++;
 	fake.load_dev = pdev;
 	pthread_mutex_unlock(&fake_lock);
@@ -158,6 +166,7 @@ int gpu_unlock_610_unlock(struct pci_dev *pdev, const struct gpu_unlock_610_shar
 	int ret;
 
 	assert(shared->gsp == fake_gsp);
+	assert(ad107_result == (pdev->device == GU_AD107_RTX_4060_LAPTOP ? AD107_RUNNING : AD107_IDLE));
 	assert(pdev->locked && pthread_equal(pdev->owner, pthread_self()) && !pdev->driver);
 	/* The initial reference, the worker's, and nothing dropped early. */
 	assert(__atomic_load_n(&pdev->refs, __ATOMIC_SEQ_CST) >= 2);
@@ -192,8 +201,11 @@ static void add(const char *name, unsigned short device, bool bound)
 {
 	struct pci_dev *pdev = &devices[device_count++];
 
-	*pdev = (struct pci_dev){ .name = name, .vendor = PCI_VENDOR_ID_NVIDIA, .device = device,
-				  .driver = bound ? &driver_marker : NULL, .refs = 1 };
+	*pdev = (struct pci_dev){.name = name,
+				 .vendor = PCI_VENDOR_ID_NVIDIA,
+				 .device = device,
+				 .driver = bound ? &driver_marker : NULL,
+				 .refs = 1};
 	pthread_mutex_init(&pdev->lock, NULL);
 }
 
@@ -202,6 +214,8 @@ static void reset(char *list)
 	memset(&fake, 0, sizeof(fake));
 	device_count = 0;
 	targets = list;
+	/* Simulate even a supplied success value; init must always discard it. */
+	ad107_result = AD107_SUCCESS;
 	ad103_experimental = false;
 	ad106_experimental = false;
 	ad107_experimental = false;
@@ -211,6 +225,7 @@ static void reset(char *list)
 static void run(void)
 {
 	assert(!test_module_init());
+	assert(ad107_result == fake.expected_result);
 	test_module_exit();
 	assert(!fake.in_flight && fake.finished == fake.started);
 	for (unsigned int i = 0; i < device_count; i++) {
@@ -220,10 +235,7 @@ static void run(void)
 	assert(fake.loads <= 1 && fake.releases <= 1);
 }
 
-static bool logged(const char *text)
-{
-	return strstr(fake.log, text);
-}
+static bool logged(const char *text) { return strstr(fake.log, text); }
 
 int main(void)
 {
@@ -300,7 +312,8 @@ int main(void)
 	add("0000:02:00.0", RTX_4090, false);
 	fake.expected_concurrent = 1;
 	run();
-	assert(fake.loads == 1 && fake.started == 1 && fake.unlocks[0] && !fake.unlocks[1] && fake.releases == 1);
+	assert(fake.loads == 1 && fake.started == 1 && fake.unlocks[0] && !fake.unlocks[1] &&
+	       fake.releases == 1);
 	assert(!logged("no supported card"));
 	puts("ad102: selected by PCI address PASS");
 
@@ -387,8 +400,31 @@ int main(void)
 		add("0000:0a:00.0", GU_AD107_RTX_4060_LAPTOP, false);
 		add("0000:02:00.0", GU_AD107_RTX_4060_LAPTOP, false);
 		fake.expected_concurrent = 1;
+		fake.expected_result = AD107_SUCCESS;
 		run();
 		assert(fake.loads == 1 && fake.started == 1 && fake.unlocks[0] && !fake.unlocks[1]);
+	}
+	reset("0000:0a:00.0");
+	ad107_experimental = true;
+	add("0000:0a:00.0", GU_AD107_RTX_4060_LAPTOP, true);
+	fake.expected_result = AD107_REFUSED;
+	run();
+	assert(fake.loads == 0 && !fake.unlocks[0] && logged("unlock failed"));
+	/* Load failure, unlock failures (including busy), and a late driver bind. */
+	for (int outcome = 0; outcome < 5; outcome++) {
+		reset("0000:0a:00.0");
+		ad107_experimental = true;
+		add("0000:0a:00.0", GU_AD107_RTX_4060_LAPTOP, false);
+		if (outcome == 0)
+			fake.fail_load = -ENOENT;
+		else if (outcome == 4)
+			fake.bind_before_worker = 1;
+		else
+			fake.fail_unlock[0] = outcome == 1 ? -EIO : outcome == 2 ? -EBUSY : -EOPNOTSUPP;
+		fake.expected_result = outcome == 4 ? AD107_REFUSED : AD107_FAILED;
+		run();
+		assert(fake.loads == 1);
+		assert(fake.started == (outcome != 0 && outcome != 4));
 	}
 	/* No devices, or no target despite opt-in, must never report success. */
 	reset("0000:0a:00.0");
@@ -411,7 +447,8 @@ int main(void)
 		run();
 		assert(!fake.loads && !fake.started);
 	}
-	puts("ad107: independent exact-ID/single-BDF gates PASS");
+	puts("ad107: idle/reset, pending/load, running/worker, success, failed, refused and exact-ID/BDF "
+	     "gates PASS");
 
 	/* No opt-in on the command line: the module does nothing. */
 	for (int empty = 0; empty < 2; empty++) {

@@ -23,6 +23,15 @@ static bool ad107_experimental;
 module_param(ad107_experimental, bool, 0444);
 MODULE_PARM_DESC(ad107_experimental, "permit only the exact 10de:28a0 AD107M laptop target with a single explicit PCI address");
 
+/* Local initrd gate diagnostic; intentionally not part of contribution branch. */
+enum ad107_outcome {
+	AD107_IDLE, AD107_PENDING, AD107_RUNNING,
+	AD107_SUCCESS, AD107_FAILED, AD107_REFUSED,
+};
+static int ad107_result;
+module_param(ad107_result, int, 0444);
+MODULE_PARM_DESC(ad107_result, "AD107 outcome: 0 idle, 1 pending, 2 running, 3 success, 4 failed, 5 refused; reset at init");
+
 static bool rtx4090d_experimental;
 module_param(rtx4090d_experimental, bool, 0444);
 MODULE_PARM_DESC(rtx4090d_experimental, "permit experimental RTX 4090 D (10de:2685) targets");
@@ -86,9 +95,14 @@ static void unlock_one(void *data, async_cookie_t cookie)
 {
 	struct pci_dev *pdev = data;
 	int ret;
+	bool ad107 = pdev->device == GU_AD107_RTX_4060_LAPTOP;
 
+	if (ad107)
+		WRITE_ONCE(ad107_result, AD107_RUNNING);
 	pci_dev_lock(pdev);
 	ret = pdev->driver ? -EBUSY : gpu_unlock_610_unlock(pdev, &shared);
+	if (ad107)
+		WRITE_ONCE(ad107_result, pdev->driver ? AD107_REFUSED : ret ? AD107_FAILED : AD107_SUCCESS);
 	pci_dev_unlock(pdev);
 	if (ret)
 		pci_err(pdev, "gpu_unlock: unlock failed (%d)\n", ret);
@@ -136,6 +150,8 @@ static int __init gpu_unlock_init(void)
 	bool all;
 	int ret;
 
+	/* Discard any load-time status argument before trusting the result. */
+	WRITE_ONCE(ad107_result, AD107_IDLE);
 	/* Loaded ahead of nvidia on every boot; the command line is the opt-in. */
 	if (!targets || !*targets)
 		return 0;
@@ -160,9 +176,22 @@ static int __init gpu_unlock_init(void)
 		}
 		if (!all && !listed(pci_name(pdev)))
 			continue;
+		if (pdev->device == GU_AD107_RTX_4060_LAPTOP) {
+			WRITE_ONCE(ad107_result, AD107_PENDING);
+			pci_dev_lock(pdev);
+			if (pdev->driver) {
+				WRITE_ONCE(ad107_result, AD107_REFUSED);
+				pci_dev_unlock(pdev);
+				pci_err(pdev, "gpu_unlock: unlock failed (%d)\n", -EBUSY);
+				continue;
+			}
+			pci_dev_unlock(pdev);
+		}
 		if (!shared.gsp) {
 			ret = gpu_unlock_610_load_shared(pdev, &shared);
 			if (ret) {
+				if (pdev->device == GU_AD107_RTX_4060_LAPTOP)
+					WRITE_ONCE(ad107_result, AD107_FAILED);
 				pci_err(pdev, "gpu_unlock: firmware load failed (%d)\n", ret);
 				pci_dev_put(pdev);
 				return 0;

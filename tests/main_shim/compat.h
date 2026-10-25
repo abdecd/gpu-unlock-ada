@@ -55,3 +55,6 @@ struct async_domain {
 async_cookie_t async_schedule_domain(async_func_t, void *, struct async_domain *);
 void async_synchronize_full_domain(struct async_domain *);
 #endif
+
+/* Match the kernel single-copy status store for concurrent mock workers. */
+#define WRITE_ONCE(x, value) __atomic_store_n(&(x), (value), __ATOMIC_RELAXED)
