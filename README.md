@@ -1,5 +1,7 @@
 # GPU unlock 1.1.1 — RTX 4090, RTX 4070 Ti SUPER and RTX 4060 Ti 16GB
 
+> **Local branch:** 本机 DKMS、镜像自动更新及卸载见 [local/cachyos/README.zh-CN.md](local/cachyos/README.zh-CN.md)。此方案不自动修改 GRUB。
+
 New to this project? Start with the [copy-paste Quick Start](QUICKSTART.md).
 
 This Linux kernel module enables the SM speed-select override before the stock

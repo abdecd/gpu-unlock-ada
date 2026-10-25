@@ -1,62 +1,98 @@
-# 本机 DKMS + 每内核独立解锁镜像（GRUB由用户维护）
+# 本机 DKMS 与解锁镜像
 
-仅属于local/cachyos-dkms分支，不包含在贡献分支。
+分支：`local/cachyos-dkms`。通用显卡支持位于 `contrib/ad107-4060-laptop`，不包含本机安装配置。
 
-## 最终职责
+## 安装
 
-1. 系统DKMS hooks自动为有headers的内核编译gpu-unlock-4060-local/1.1.1.ad107.1；目标Clang内核用LLVM，GCC内核清空LLVM。
-2. 本地99-gpu-unlock-4060.hook在当前70-DKMS及90-dracut之后，执行root-owned `/usr/local/lib/gpu-unlock-4060/update-images.sh`。
-3. 更新器枚举所有具备pkgbase/vmlinuz的已安装linux系列内核，要求headers、DKMS installed、vermagic和本地结果接口匹配，构建审计独立镜像。
-4. 输出 `/boot/initramfs-<pkgbase>-nvidia-40-unlock.img`。先构建临时文件、审计、同文件系统暂存校验，再原子替换同名unlock文件。
-5. **绝不生成/改写GRUB菜单，不复制专用内核，不改默认项，不改普通或fallback镜像。** 用户配置最后一步。
+在仓库根目录运行。需要目标内核的 headers、DKMS、Clang/LLVM、dracut、Python、zstd。
 
-本机对应：
-- linux 7.2.11-arch1-1 → /boot/initramfs-linux-nvidia-40-unlock.img
-- linux-cachyos 7.3.0-4-cachyos → /boot/initramfs-linux-cachyos-nvidia-40-unlock.img
-
-相同pkgbase同时出现多个版本时拒绝，避免固定文件名歧义。无headers/模块编译失败时保留旧unlock并报错；旧镜像可能不匹配升级后的内核，不能因为文件存在就继续启动。
-
-## 安装与手动触发
-
-基础DKMS安装（首次，没有现存版本时）：
 ```bash
-sudo bash local/cachyos/install-host.sh /absolute/path/to/verified/assets
-```
-安装/升级镜像自动化：
-```bash
+# 下载、校验并生成固定版本固件
+make assets
+
+# 首次安装模块和固件；已有安装会拒绝覆盖
+sudo bash local/cachyos/install-host.sh "$HOME/.cache/gpu-unlock/assets"
+
+# 安装镜像更新工具和 pacman 钩子，并构建解锁镜像
 sudo bash local/cachyos/install-auto-update.sh
 ```
-手动重建所有已安装内核的unlock镜像：
+
+安装不会加载模块、修改 GRUB 或重启。DKMS 根据目标内核选择 GCC 或 LLVM。
+
+## 自动更新
+
+系统 DKMS 为有 headers 的内核编译模块。随后本地 `99-gpu-unlock-4060.hook` 为每个已安装内核生成：
+
+```text
+/boot/initramfs-<内核包名>-nvidia-40-unlock.img
+```
+
+例如：
+
+```text
+/boot/initramfs-linux-nvidia-40-unlock.img
+/boot/initramfs-linux-cachyos-nvidia-40-unlock.img
+```
+
+构建并审计通过后才替换同名解锁镜像。普通和 fallback 镜像不变，GRUB 由用户维护。
+
+失败时保留旧解锁镜像并报错；旧镜像可能不匹配新内核，修复前使用普通入口。日志：`/var/log/gpu-unlock-4060/`。
+
+手动重建：
+
 ```bash
 sudo /usr/local/lib/gpu-unlock-4060/update-images.sh
 ```
-均不加载/重载模块，不重启。安装脚本不是pacman包，文件由本地脚本管理。运行时资源在root-owned目录，不依赖/run/media挂载或Git工作区。
 
-固定固件路径 /usr/lib/firmware/gpu-unlock/610.43.03，9个SHA固定。普通dracut通过/etc/dracut.conf.d/zz-gpu-unlock-local-stock-omit.conf只排除gpu_unlock，正常NVIDIA不受影响。独立镜像使用专用confdir绕开此项并排除提前绑定驱动；门控要求精确28a0与完整BDF、单次执行、结果3，不支持自动重试。
+Git 更新不会自动更新已安装工具；手动修改 DKMS 后也需重新构建镜像。同名内核包对应多个版本时，更新器拒绝生成歧义文件。
 
-## GRUB由你配置
+## GRUB
 
-从正常入口复制一个解锁项，保留root、其他参数与微码；按内核包名配对：
+复制正常启动项，保留根分区、其他参数及微码配置，配对对应内核和解锁镜像：
 
 ```text
 linux  /boot/vmlinuz-linux-cachyos 原有参数 gpu_unlock.targets=0000:01:00.0 gpu_unlock.ad107_experimental=1
 initrd /boot/initramfs-linux-cachyos-nvidia-40-unlock.img
 ```
 
-普通Arch对应vmlinuz-linux + initramfs-linux-nvidia-40-unlock.img。这些是结构示例，不要把“原有参数”原样粘贴。GRUB文件路径取决于/boot布局。当前本机/boot在ext4根分区。用户可用/boot/grub/custom.cfg或40_custom，自行管理。不运行grub-mkconfig也不改任何默认项的责任由更新器保持。
+普通 Arch 内核对应 `vmlinuz-linux` 和 `initramfs-linux-nvidia-40-unlock.img`。示例中的“原有参数”需要替换；路径取决于 `/boot` 布局。
 
-## 自动更新边界
+本机可编辑 `/boot/grub/custom.cfg`，无需重新生成主配置。若使用 `/etc/grub.d/40_custom`，需自行运行 `grub-mkconfig`。保留一个不解锁的正常入口。
 
-内核/headers/固件/systemd/dracut等pacman事件会触发本地钩子，当前钩子顺序与系统匹配。钩子失败不能回滚pacman；必须查看报错和/var/log/gpu-unlock-4060。未实际模拟完整pacman升级，已实际执行双内核构建/审计通过。普通Arch新解锁镜像未实机启动验证，CachyOS新DKMS镜像也不等于旧TEST已启动验证。
+## 卸载
 
-不自动清理已卸载内核的unlock镜像（避免误删）；用户应清理无用镜像/菜单。Git pull或手动DKMS改动不触发pacman hook，需显式重新安装工具并运行更新器。模块版本变化要更新本地版本及工具的匹配规则。
+先查看操作：
 
-## 卸载与恢复
+```bash
+sudo bash local/cachyos/uninstall-host.sh --dry-run
+```
 
-先正常入口启动。停止自动构建可移除/etc/pacman.d/hooks/99-gpu-unlock-4060.hook；再卸载本地DKMS注册/源码。uninstall-host.sh不卸载正在运行模块、不删除固件、镜像或用户菜单。用户自行清理确认不再需要的-unlock.img，原始镜像始终保留。
+默认卸载自动更新钩子、DKMS、源码、工具、专用配置和哈希匹配的固定固件：
 
-本次旧TEST/DKMS生成菜单已备份并清理。旧版本化实验内核/镜像暂留备份，不再引用；可确认新入口成功后再删除。
+```bash
+sudo bash local/cachyos/uninstall-host.sh
+```
 
-## 验证与限制
+同时清理有校验记录且内容匹配的解锁镜像和日志：
 
-两个内核实际DKMS编译签名安装成功，两个固定名unlock镜像实际构建并审计通过。全资源回归31项/3可选跳过；工具测试见local/cachyos/tests。未重启、未切默认、未重载当前模块。运行时D3/独显断电、休眠恢复和长期应用稳定性未承诺。
+```bash
+sudo bash local/cachyos/uninstall-host.sh --purge-images --purge-logs
+```
+
+可单独使用 `--purge-images` 或 `--purge-logs`。镜像或固件被修改时拒绝删除，避免误删其他文件。
+
+卸载不修改用户 GRUB，不删除普通/fallback 镜像、旧 TEST 文件、备份或仓库。自行移除无用菜单项。不会执行 `rmmod` 或重启；已加载模块和运行时状态留到关机，下次选择普通入口。钩子移除后不再自动生成镜像。
+
+## 安装位置
+
+| 内容 | 路径 |
+|---|---|
+| DKMS 源码 | `/usr/src/gpu-unlock-4060-local-1.1.1.ad107.1` |
+| 固定固件 | `/usr/lib/firmware/gpu-unlock/610.43.03` |
+| 更新工具 | `/usr/local/lib/gpu-unlock-4060` |
+| pacman 钩子 | `/etc/pacman.d/hooks/99-gpu-unlock-4060.hook` |
+| 普通镜像排除配置 | `/etc/dracut.conf.d/zz-gpu-unlock-local-stock-omit.conf` |
+
+## 范围
+
+本机已验证两次实验解锁和一次原始入口恢复，双内核 DKMS 编译及独立镜像审计通过。新镜像和真实系统升级流程仍需启动验证。未验证休眠、运行时独显断电恢复及长时间应用稳定性。
