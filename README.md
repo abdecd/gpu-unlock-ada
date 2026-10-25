@@ -88,6 +88,18 @@ permission, selector and post-FLR gate, the NVIDIA 595.99.02 driver loaded, and
 the RM getter changed FMLA32, IMLA2 and IMLA4 from half to full rate. No
 same-card stock throughput run has been made yet. See the
 [2805 report](docs/ada-2805-report.md).
+RTX 4060 Laptop `10de:28a0` is an **experimental exact AD107M target with
+owner evidence from one physical laptop**. It requires both
+`gpu_unlock.ad107_experimental=1` (default false) and a single exact PCI
+address; `targets=all` never selects it. Two observed unlocked boots with
+stock rollback between them showed approximately 2× FP16/FP32 instruction
+rate; TF32/FP32 varied between 1.78× and 1.99× stock. BF16 was checked only
+numerically, not for throughput. These are not verified EC-power-removal cold
+boots or long-term stability validation. See the [28a0 report and selected
+sanitized evidence](docs/ada-28a0-report.md), including limits and the flag-name
+overlap with PR #10. The read-only boot-option helper includes this device
+only with `--exact28a0`.
+
 Other Ada IDs, professional RTX A-series and data-centre parts are not accepted.
 Shared firmware across Ada chips does not establish support for untested cards.
 

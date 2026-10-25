@@ -1,0 +1,20 @@
+pci 0000:01:00.0: AD102 before-firmware: readout1=0x410080 fields=0 0 2 0 0 2 0 2 0 valid=1 full=0
+pci 0000:01:00.0: AD102 permission after-payload: WPR_CFG[0x1fa7cc]=0xfffff0ff before=0x4cb8f expected=0xfffff0ff required=1 valid=1 pci=0x28a010de chip=0x197000a1
+pci 0000:01:00.0: AD102 permission after-payload: FBPA[0x9a0148]=0xffffff0f before=0xffffff0f expected=0xffffffff required=0 valid=1 pci=0x28a010de chip=0x197000a1
+pci 0000:01:00.0: AD102 permission after-payload: WPR[0x1fa7c4]=0xffffffff before=0x4cb8f expected=0xffffffff required=1 valid=1 pci=0x28a010de chip=0x197000a1
+pci 0000:01:00.0: AD102 permission after-payload: FEAT[0x823804]=0xffffffff before=0xffffff8f expected=0xffffffff required=1 valid=1 pci=0x28a010de chip=0x197000a1
+pci 0000:01:00.0: AD102 payload result: boot=0 halt=0 marker=0x67b00001 expected=0x67b00001 marker_ok=1 required_permissions=1 cpuctl=0x10 halted=1 debug=0xda550000 ss0=0x6724035 ss1=0x5
+pci 0000:01:00.0: selector result: SS0=0x88888888 expected=0x88888888 matched=1
+pci 0000:01:00.0: selector result: SS1=0x8 expected=0x8 matched=1
+pci 0000:01:00.0: AD102 selectors-applied: readout1=0x0 fields=0 0 0 0 0 0 0 0 0 valid=1 full=1
+pci 0000:01:00.0: pre-FLR selectors: ss0=0x88888888 expected=0x88888888 ss1=0x8 expected=0x8
+pci 0000:01:00.0: AD102 pre-FLR: readout1=0x0 fields=0 0 0 0 0 0 0 0 0 valid=1 full=1
+pci 0000:01:00.0: PCIe FLR returned: result=0
+pci 0000:01:00.0: post-FLR SEC2 reset released, GSP halted, BME=0 pending=0 WPR2=1ffffe00:00000000 SS0=88888888 SS1=00000008
+pci 0000:01:00.0: AD102 permission post-FLR: WPR_CFG[0x1fa7cc]=0x4cb8f before=0x4cb8f expected=0xfffff0ff required=1 valid=1 pci=0x28a010de chip=0x197000a1
+pci 0000:01:00.0: AD102 permission post-FLR: FBPA[0x9a0148]=0xffffff0f before=0xffffff0f expected=0xffffffff required=0 valid=1 pci=0x28a010de chip=0x197000a1
+pci 0000:01:00.0: AD102 permission post-FLR: WPR[0x1fa7c4]=0x4cb8f before=0x4cb8f expected=0xffffffff required=1 valid=1 pci=0x28a010de chip=0x197000a1
+pci 0000:01:00.0: AD102 permission post-FLR: FEAT[0x823804]=0xffffffff before=0xffffff8f expected=0xffffffff required=1 valid=1 pci=0x28a010de chip=0x197000a1
+pci 0000:01:00.0: AD102 post-FLR: readout1=0x0 fields=0 0 0 0 0 0 0 0 0 valid=1 full=1
+pci 0000:01:00.0: driver probe resources: phase=handoff empty=1
+pci 0000:01:00.0: gpu_unlock: unlocked

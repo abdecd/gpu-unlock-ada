@@ -7,10 +7,12 @@
 static u8 payload[GU_V67_SIZE];
 static const struct firmware payload_fw = { sizeof(payload), payload };
 
+static unsigned short mock_profile = GU_AD102_RTX_4090;
+
 static void ad102_setup(struct unlock_transaction_work *w)
 {
     setup(w);
-    dev.device=GU_AD102_RTX_4090;
+    dev.device=mock_profile;
     regs[0]=0x192000a1;
     regs[0x1fa7cc/4]=regs[0x1fa7c4/4]=0x0004cb8f;
     regs[0x9a0148/4]=0xffffff0f;
@@ -37,6 +39,21 @@ static void prepare_boot(struct unlock_transaction_work *w)
 int main(int argc, char **argv)
 {
     struct unlock_transaction_work w;
+    /* No firmware files needed: exercise profile dispatch and every existing
+     * Ada guard below for AD102 and the experimental AD107M source profile. */
+    const unsigned short profiles[] = {GU_AD102_RTX_4090, GU_AD107_RTX_4060_LAPTOP};
+    for(unsigned profile=0;profile<ARRAY_SIZE(profiles);profile++) {
+    mock_profile=profiles[profile];
+    ad102_setup(&w);
+    const struct gpu_unlock_assets *assets=unlock_assets(&dev);
+    assert(is_ad102(&w) && fake_ada_id());
+    assert(!strcmp(assets->booter,BOOTER_FILE_AD102));
+    assert(!strcmp(assets->gsp,GSP_FILE));
+    assert(!strcmp(assets->boot,BOOT_FILE_AD102));
+    assert(!strcmp(assets->desc,BOOT_DESC_FILE_AD102));
+    assert(!strcmp(assets->payload,V67_FILE_AD102));
+    assert(!strcmp(assets->signature_section,".fwsignature_ad10x"));
+    assert(assets->arch==GU_BOOTER_AD10X && assets->boot_image_size==36864);
     /* Required permissions are exact; FBPA is observational. Missing/wrong
      * markers, ignored stores, live SEC2 and inaccessible BAR views all stop
      * before either selector. No failure grants DMA cleanup authority. */
@@ -108,6 +125,9 @@ int main(int argc, char **argv)
         if(mode==2 || mode==6)assert(ret==-EIO);
         assert(!unlock_transaction_unwind(&w) && !w.retained);
     }
+    printf("Ada profile 0x%04x: assets, marker, permissions, HALT, readout, metadata and retention host mocks PASS\n",mock_profile);
+    }
+    mock_profile=GU_AD102_RTX_4090;
     /* Real asset parsing, pinning, publication, restore, FLR and retention;
      * all register behavior is supplied by this host-only harness. */
     if(argc==3) {

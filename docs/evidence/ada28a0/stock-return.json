@@ -1,0 +1,101 @@
+{
+  "instruction-bench": {
+    "gpu": "GPU-REDACTED, NVIDIA GeForce RTX 4060 Laptop GPU, 00000000:01:00.0, 595.71.05, [N/A]",
+    "cubin_sha256": "267963e693e2beba7aba9b29a6f517478cffe676851a3eb3154011c160f0b194",
+    "iters": 5000,
+    "reps": 3,
+    "blocks": 1056,
+    "threads": 256,
+    "warps": 8448,
+    "chains": 8,
+    "modes": {
+      "f16_f32": {
+        "instruction": "bench_f16_f32",
+        "k": 16,
+        "times_ms": [
+          47.54207992553711,
+          47.5412483215332,
+          47.547393798828125
+        ],
+        "rates_Top_per_s": [
+          29.113583633023243,
+          29.114092895475785,
+          29.110329913268846
+        ],
+        "best_Top_per_s": 29.114092895475785,
+        "expected_cell": 2560000,
+        "cells_checked": 270336,
+        "mismatches": 0
+      },
+      "tf32": {
+        "instruction": "bench_tf32",
+        "k": 8,
+        "times_ms": [
+          42.43724822998047,
+          42.43641662597656,
+          42.509918212890625
+        ],
+        "rates_Top_per_s": [
+          16.307847206527473,
+          16.30816678278085,
+          16.279969218810237
+        ],
+        "best_Top_per_s": 16.30816678278085,
+        "expected_cell": 1280000,
+        "cells_checked": 270336,
+        "mismatches": 0
+      },
+      "u4_s32": {
+        "instruction": "bench_u4",
+        "k": 64,
+        "times_ms": [
+          21.46406364440918,
+          21.46406364440918,
+          21.463808059692383
+        ],
+        "rates_Top_per_s": [
+          257.94189635857265,
+          257.94189635857265,
+          257.944967854849
+        ],
+        "best_Top_per_s": 257.944967854849,
+        "expected_cell": 10240000,
+        "cells_checked": 270336,
+        "mismatches": 0
+      }
+    },
+    "cuda_uuid_verified": true,
+    "desktop_active": true,
+    "configuration_changes": false,
+    "seconds": 0.7718520164489746
+  },
+  "sm-rates": {
+    "pci": "0000:01:00.0",
+    "model": "NVIDIA GeForce RTX 4060 Laptop GPU",
+    "uuid": "GPU-REDACTED",
+    "driver": "595.71.05",
+    "rates": {
+      "imla0": 0,
+      "fmla16": 0,
+      "dp": 0,
+      "fmla32": 1,
+      "ffma": 0,
+      "imla1": 0,
+      "imla2": 1,
+      "imla3": 0,
+      "imla4": 1
+    },
+    "interpretation": {
+      "imla0": "full",
+      "fmla16": "full",
+      "dp": "full",
+      "fmla32": "1/2",
+      "ffma": "full",
+      "imla1": "full",
+      "imla2": "1/2",
+      "imla3": "full",
+      "imla4": "1/2"
+    },
+    "hardware_configuration_changes": false
+  }
+}

@@ -204,6 +204,7 @@ static void reset(char *list)
 	targets = list;
 	ad103_experimental = false;
 	ad106_experimental = false;
+	ad107_experimental = false;
 }
 
 /* Runs init, then checks what holds for every case. */
@@ -354,6 +355,63 @@ int main(void)
 	run();
 	assert(fake.loads == 1 && fake.started == 1 && fake.unlocks[0]);
 	puts("ad106: gated exact-card dispatch PASS");
+
+	/* AD107M is independent, exact-ID and single-BDF only. */
+	assert(!ad107_experimental);
+	for (int flags = 0; flags < 3; flags++) {
+		reset("0000:0a:00.0");
+		ad103_experimental = flags == 1;
+		ad106_experimental = flags == 2;
+		add("0000:0a:00.0", GU_AD107_RTX_4060_LAPTOP, false);
+		run();
+		assert(!fake.loads && !fake.started);
+	}
+	const char *denied[] = {"all",
+				"0000:0b:00.0",
+				"0000:0a:00.0,0000:02:00.0",
+				"0000:0a:00.0,",
+				"0000:0a:00.0,0000:0a:00.0",
+				"0000:0a:00",
+				"0000:0a:00.0 "};
+	for (unsigned i = 0; i < ARRAY_SIZE(denied); i++) {
+		reset((char *)denied[i]);
+		ad107_experimental = true;
+		add("0000:0a:00.0", GU_AD107_RTX_4060_LAPTOP, false);
+		run();
+		assert(!fake.loads && !fake.started);
+		assert(logged("experimental AD107 requires a single exact PCI target"));
+	}
+	for (int upper = 0; upper < 2; upper++) {
+		reset(upper ? "0000:0A:00.0" : "0000:0a:00.0");
+		ad107_experimental = true;
+		add("0000:0a:00.0", GU_AD107_RTX_4060_LAPTOP, false);
+		add("0000:02:00.0", GU_AD107_RTX_4060_LAPTOP, false);
+		fake.expected_concurrent = 1;
+		run();
+		assert(fake.loads == 1 && fake.started == 1 && fake.unlocks[0] && !fake.unlocks[1]);
+	}
+	/* No devices, or no target despite opt-in, must never report success. */
+	reset("0000:0a:00.0");
+	ad107_experimental = true;
+	run();
+	for (int empty = 0; empty < 2; empty++) {
+		reset(empty ? "" : NULL);
+		ad107_experimental = true;
+		add("0000:0a:00.0", GU_AD107_RTX_4060_LAPTOP, false);
+		run();
+		assert(!fake.loads && !fake.started);
+	}
+	/* This flag must not admit neighboring or other experimental IDs. */
+	const unsigned short rejected[] = {0x28a1, 0x2882, GU_AD106_RTX_4060_TI_16GB,
+					   GU_AD103_RTX_4070_TI_SUPER, GU_AD102_RTX_4090_D};
+	for (unsigned i = 0; i < ARRAY_SIZE(rejected); i++) {
+		reset("0000:0a:00.0");
+		ad107_experimental = true;
+		add("0000:0a:00.0", rejected[i], false);
+		run();
+		assert(!fake.loads && !fake.started);
+	}
+	puts("ad107: independent exact-ID/single-BDF gates PASS");
 
 	/* No opt-in on the command line: the module does nothing. */
 	for (int empty = 0; empty < 2; empty++) {
