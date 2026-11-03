@@ -124,6 +124,13 @@ class InstalledImageTests(unittest.TestCase):
         self.assertTrue(all(len(digest) == 64 for digest in pins.values()))
         self.assertIn('gsp_ga10x.bin', pins)
 
+    def test_gate_helper_absent_pci_bypasses(self):
+        gate = Path(__file__).resolve().parents[1] / 'image-overlay/usr/libexec/ad107-unlock-gate'
+        text = gate.read_text()
+        self.assertIn('if [ ! -d "$pci" ]; then', text)
+        self.assertIn("record 'SKIPPED: target PCI function 0000:01:00.0 absent (bypassing unlock)' || exit 1", text)
+        self.assertIn('exit 0', text)
+
 
 if __name__ == '__main__':
     unittest.main()

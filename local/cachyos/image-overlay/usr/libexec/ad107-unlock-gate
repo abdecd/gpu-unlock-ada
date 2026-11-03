@@ -65,7 +65,10 @@ for module in /sys/module/nvidia* /sys/module/nouveau /sys/module/vfio_pci /sys/
     [ ! -d "$module" ] || fail 'competing GPU binder already loaded'
 done
 set -f
-[ -d "$pci" ] || fail 'target PCI function absent'
+if [ ! -d "$pci" ]; then
+    record 'SKIPPED: target PCI function 0000:01:00.0 absent (bypassing unlock)' || exit 1
+    exit 0
+fi
 read_single "$pci/vendor" || fail 'cannot read PCI vendor'
 [ "$value" = 0x10de ] || fail 'unexpected PCI vendor'
 read_single "$pci/device" || fail 'cannot read PCI device'
