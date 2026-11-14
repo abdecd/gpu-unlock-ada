@@ -57,6 +57,22 @@ done
 [ "$target_count" -eq 1 ] || fail 'require exact target flag once'
 [ "$optin_count" -eq 1 ] || fail 'require exact experimental flag once'
 
+if [ ! -d "$pci" ]; then
+    record 'SKIPPED: target PCI function 0000:01:00.0 absent (bypassing unlock)' || exit 1
+    exit 0
+fi
+read_single "$pci/vendor" || fail 'cannot read PCI vendor'
+if [ "$value" != 0x10de ]; then
+    record "SKIPPED: target PCI function has vendor $value, not NVIDIA (bypassing unlock)" || exit 1
+    exit 0
+fi
+read_single "$pci/device" || fail 'cannot read PCI device'
+if [ "$value" != 0x28a0 ]; then
+    record "SKIPPED: target PCI function has device $value, not AD107M 10de:28a0 (bypassing unlock)" || exit 1
+    exit 0
+fi
+# Binder checks apply only after identifying the intended card. With the card
+# disabled, this BDF can belong to an unrelated, already-bound device.
 [ ! -d /sys/module/gpu_unlock ] || fail 'gpu_unlock already loaded'
 # Defense in depth; builder must physically omit all these binder modules.
 # Globbing is enabled only for this fixed sysfs inventory, never cmdline data.
@@ -65,14 +81,6 @@ for module in /sys/module/nvidia* /sys/module/nouveau /sys/module/vfio_pci /sys/
     [ ! -d "$module" ] || fail 'competing GPU binder already loaded'
 done
 set -f
-if [ ! -d "$pci" ]; then
-    record 'SKIPPED: target PCI function 0000:01:00.0 absent (bypassing unlock)' || exit 1
-    exit 0
-fi
-read_single "$pci/vendor" || fail 'cannot read PCI vendor'
-[ "$value" = 0x10de ] || fail 'unexpected PCI vendor'
-read_single "$pci/device" || fail 'cannot read PCI device'
-[ "$value" = 0x28a0 ] || fail 'unexpected PCI device (requires AD107M 10de:28a0)'
 [ ! -L "$pci/driver" ] && [ ! -e "$pci/driver" ] || fail 'PCI function already bound'
 read_single "$pci/driver_override" || fail 'cannot read driver_override'
 case "$value" in

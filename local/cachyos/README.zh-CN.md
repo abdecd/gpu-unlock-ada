@@ -44,6 +44,24 @@ sudo bash local/cachyos/install-auto-update.sh
 sudo /usr/local/lib/gpu-unlock-4060/update-images.sh
 ```
 
+### 更新“关闭 4060 时跳过”修复
+
+门禁先核对固定地址 `0000:01:00.0` 的身份：地址不存在、vendor 不是
+`0x10de` 或 device 不是 `0x28a0`，均记录 `SKIPPED` 并正常放行，不加载解锁模块。
+关闭独显后 PCI 地址可能被其他设备占用，因此仅判断地址是否存在不够。
+目标卡存在时，绑定冲突、读取失败和解锁失败仍会阻止启动。
+
+从普通启动入口进入系统，在本仓库根目录运行：
+
+```bash
+sudo bash local/cachyos/install-auto-update.sh
+```
+
+该命令更新已安装的 overlay/工具并重建解锁镜像；只运行旧的已安装
+`update-images.sh` 会继续使用旧 overlay。无需重装 DKMS（此次仅修改 shell 门禁）。
+必须确认构建和审计成功后再测试解锁入口；失败时不要把保留的旧镜像当成已修复。
+普通/fallback 镜像和 GRUB 不修改。
+
 Git 更新不会自动更新已安装工具；手动修改 DKMS 后也需重新构建镜像。同名内核包对应多个版本时，更新器拒绝生成歧义文件。
 
 ## GRUB
