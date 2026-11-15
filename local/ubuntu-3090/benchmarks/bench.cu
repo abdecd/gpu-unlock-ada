@@ -1,0 +1,18 @@
+#include <cuda_runtime.h>
+#include <cuda_fp16.h>
+#include <cuda_bf16.h>
+#include <cublas_v2.h>
+#include <cstdio>
+#include <cstdlib>
+#include <vector>
+#include <cmath>
+#define CU(x) do{auto e=(x);if(e!=cudaSuccess){fprintf(stderr,"CUDA %s line %d\n",cudaGetErrorString(e),__LINE__);exit(1);}}while(0)
+#define BL(x) do{auto e=(x);if(e!=CUBLAS_STATUS_SUCCESS){fprintf(stderr,"CUBLAS %d line %d\n",(int)e,__LINE__);exit(1);}}while(0)
+__global__ void init(void*a,void*b,int type,size_t count,bool ones){size_t i=(size_t)blockIdx.x*blockDim.x+threadIdx.x;if(i>=count)return;float x=ones?1.f:((int)(i%31)-15)/16.f,y=ones?1.f:((int)(i%29)-14)/16.f;if(type==CUDA_R_32F){((float*)a)[i]=x;((float*)b)[i]=y;}else if(type==CUDA_R_16F){((half*)a)[i]=__float2half(x);((half*)b)[i]=__float2half(y);}else{((__nv_bfloat16*)a)[i]=__float2bfloat16(x);((__nv_bfloat16*)b)[i]=__float2bfloat16(y);}}
+struct Mode{const char*name;cudaDataType_t input,output;cublasComputeType_t compute;};
+int main(){CU(cudaSetDevice(0));cudaDeviceProp p;CU(cudaGetDeviceProperties(&p,0));char bus[32];CU(cudaDeviceGetPCIBusId(bus,32,0));cublasHandle_t h;BL(cublasCreate(&h));int version;BL(cublasGetVersion(h,&version));printf("# GPU=%s PCI=%s runtime=%d cublas=%d\n",p.name,bus,CUDART_VERSION,version);printf("kind,mode,n,rep,ms,tflops,max_abs,samples\n");
+Mode modes[]={{"fp32",CUDA_R_32F,CUDA_R_32F,CUBLAS_COMPUTE_32F_PEDANTIC},{"tf32",CUDA_R_32F,CUDA_R_32F,CUBLAS_COMPUTE_32F_FAST_TF32},{"fp16_fp32",CUDA_R_16F,CUDA_R_32F,CUBLAS_COMPUTE_32F},{"bf16_fp32",CUDA_R_16BF,CUDA_R_32F,CUBLAS_COMPUTE_32F},{"fp16_fp16",CUDA_R_16F,CUDA_R_16F,CUBLAS_COMPUTE_16F}};
+for(auto mode:modes)for(int n:{256,4096,8192}){size_t count=(size_t)n*n;void *a,*b,*c;size_t is=mode.input==CUDA_R_32F?4:2,os=mode.output==CUDA_R_32F?4:2;CU(cudaMalloc(&a,count*is));CU(cudaMalloc(&b,count*is));CU(cudaMalloc(&c,count*os));init<<<(count+255)/256,256>>>(a,b,mode.input,count,n==256);CU(cudaGetLastError());CU(cudaDeviceSynchronize());float alpha=1,beta=0;half ha=__float2half(1),hb=__float2half(0);auto gemm=[&](){BL(cublasGemmEx(h,CUBLAS_OP_N,CUBLAS_OP_N,n,n,n,mode.compute==CUBLAS_COMPUTE_16F?(void*)&ha:(void*)&alpha,a,mode.input,n,b,mode.input,n,mode.compute==CUBLAS_COMPUTE_16F?(void*)&hb:(void*)&beta,c,mode.output,n,mode.compute,CUBLAS_GEMM_DEFAULT));};
+gemm();CU(cudaDeviceSynchronize());std::vector<float> out(count);if(os==4){CU(cudaMemcpy(out.data(),c,count*4,cudaMemcpyDeviceToHost));}else{std::vector<half> tmp(count);CU(cudaMemcpy(tmp.data(),c,count*2,cudaMemcpyDeviceToHost));for(size_t i=0;i<count;i++)out[i]=__half2float(tmp[i]);}
+double maxabs=0;int samples=n==256?65536:32;for(int s=0;s<samples;s++){size_t idx=n==256?s:((size_t)s*2654435761ULL)%count;int row=idx%n,col=idx/n;double ref=0;if(n==256)ref=n;else for(int k=0;k<n;k++){float x=((int)(((size_t)row+(size_t)k*n)%31)-15)/16.f;float y=((int)(((size_t)k+(size_t)col*n)%29)-14)/16.f;ref+=x*y;}double err=fabs(out[idx]-ref);if(!std::isfinite(out[idx]))return 3;if(err>maxabs)maxabs=err;}printf("check,%s,%d,0,0,0,%.8f,%d\n",mode.name,n,maxabs,samples);if((n==256&&maxabs!=0)||(mode.compute!=CUBLAS_COMPUTE_16F&&maxabs>0.05)){fprintf(stderr,"validation failed\n");return 2;}
+if(n!=256){for(int i=0;i<10;i++)gemm();CU(cudaDeviceSynchronize());cudaEvent_t st,en;CU(cudaEventCreate(&st));CU(cudaEventCreate(&en));for(int r=1;r<=5;r++){CU(cudaEventRecord(st));for(int i=0;i<30;i++)gemm();CU(cudaEventRecord(en));CU(cudaEventSynchronize(en));float ms;CU(cudaEventElapsedTime(&ms,st,en));ms/=30;printf("perf,%s,%d,%d,%.6f,%.6f,0,0\n",mode.name,n,r,ms,2.*n*n*n/(ms*1e9));fflush(stdout);}CU(cudaEventDestroy(st));CU(cudaEventDestroy(en));}CU(cudaFree(a));CU(cudaFree(b));CU(cudaFree(c));}BL(cublasDestroy(h));return 0;}

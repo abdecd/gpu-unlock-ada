@@ -1,0 +1,58 @@
+#!/bin/sh
+# initramfs-only: invoked synchronously before udev; NEVER source on a host.
+PREREQ=""
+prereqs() { echo "$PREREQ"; }
+case "${1:-}" in prereqs) prereqs; exit 0;; esac
+PATH=/usr/sbin:/usr/bin:/sbin:/bin
+export PATH
+unset MODPROBE_OPTIONS
+set -f
+. /scripts/functions
+record() { printf 'server3090: %s\n' "$*" > /dev/kmsg; }
+skip() { record "SKIPPED: $*; continuing without a new unlock attempt"; exit 0; }
+failed() { record "FAILED_AFTER_LOAD: $*; GPU state not guaranteed"; panic "server3090: $*"; exit 1; }
+# Use the upstream opt-in directly; image contents do not select any card.
+cmdline=$(cat /proc/cmdline) || skip 'cannot read command line'
+count=0; target=; binder_config=0
+for arg in $cmdline; do
+    case "$arg" in
+        vfio-pci.*|vfio_pci.*|pci-stub.*|pci_stub.*) binder_config=1;;
+        gpu_unlock.targets=*) count=$((count + 1)); target=${arg#*=};;
+    esac
+done
+[ "$count" -ne 0 ] || { record 'SKIPPED: no targets'; exit 0; }
+[ "$count" -eq 1 ] && [ -n "$target" ] || skip 'missing or duplicate targets'
+# Validate syntax only. Device selection and per-card eligibility belong to
+# the upstream module, including absent, non-target and already-bound cards.
+case "$target" in
+    all) ;;
+    *)
+        remaining=$target
+        while :; do
+            entry=${remaining%%,*}
+            case "$entry" in
+                [0-9a-fA-F][0-9a-fA-F][0-9a-fA-F][0-9a-fA-F]:[0-9a-fA-F][0-9a-fA-F]:[01][0-9a-fA-F].[0-7]) ;;
+                *) skip 'invalid PCI address list';;
+            esac
+            case "$remaining" in
+                *,*) remaining=${remaining#*,};;
+                *) break;;
+            esac
+        done
+        ;;
+esac
+[ "$binder_config" -eq 0 ] || skip 'explicit early PCI binder configuration'
+mkdir -p /run/server3090 || skip 'cannot create record directory'
+mkdir /run/server3090/attempted || skip 'retry prohibited'
+[ ! -d /sys/module/gpu_unlock ] || skip 'gpu_unlock already loaded'
+set +f
+for module in /sys/module/nvidia* /sys/module/nouveau; do
+    [ ! -d "$module" ] || skip 'competing GPU binder already loaded'
+done
+set -f
+command -v modprobe >/dev/null 2>&1 || skip 'modprobe unavailable'
+record "ATTEMPTING: $target; firmware transaction can hang; no retry"
+modprobe -C /dev/null --ignore-install gpu_unlock "targets=$target" || failed 'module loading failed'
+# Upstream returns 0 even for some per-card failures. Do NOT claim success.
+record 'MODULE_RETURNED: not proof of unlock; inspect per-card kernel logs and run health/numerical checks'
+exit 0

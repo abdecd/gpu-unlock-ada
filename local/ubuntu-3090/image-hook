@@ -1,0 +1,21 @@
+#!/bin/sh
+# Private mkinitramfs hook, installed ONLY into the temporary config tree.
+set -eu
+PREREQ=""
+case "${1:-}" in prereqs) echo "$PREREQ"; exit 0;; esac
+. /usr/share/initramfs-tools/hook-functions
+: "${SERVER3090_LIB:?}" "${SERVER3090_MODULE:?}" "${SERVER3090_KERNEL:?}"
+# No GPU binder in this dedicated image: even an explicit udev load cannot win.
+find "$DESTDIR/lib/modules" -type f \( -name 'nvidia*.ko*' -o -name 'nouveau.ko*' -o -name 'vfio-pci*.ko*' -o -name 'vfio_pci*.ko*' -o -name 'pci-stub.ko*' -o -name 'pci_stub.ko*' -o -name '*pciback.ko*' -o -name 'uio_pci_generic.ko*' \) -delete
+# Dependencies of the privately built module must still be available early.
+deps=$(modinfo -F depends "$SERVER3090_MODULE")
+oldifs=$IFS; IFS=,
+for dep in $deps; do manual_add_modules "$dep"; done
+IFS=$oldifs
+mkdir -p "$DESTDIR/lib/modules/$SERVER3090_KERNEL/extra/server3090" "$DESTDIR/scripts/init-top" "$DESTDIR/etc"
+copy_file module "$SERVER3090_MODULE" "/lib/modules/$SERVER3090_KERNEL/extra/server3090/gpu_unlock.ko"
+copy_exec /sbin/modprobe
+copy_exec /bin/mkdir
+copy_exec /bin/cat
+mkdir -p "$DESTDIR/lib/firmware/gpu-unlock/610.43.03"
+cp "$SERVER3090_LIB"/assets/*.bin "$DESTDIR/lib/firmware/gpu-unlock/610.43.03/"
